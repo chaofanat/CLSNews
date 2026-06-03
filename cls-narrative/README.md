@@ -100,6 +100,17 @@ PUSH_HANDLERS=sqlite,webhook
 
 启动后访问 `http://localhost:8900/docs` 查看完整交互式 API 文档。
 
+### 失败管理 API
+
+LLM 提取永久失败（3 次重试耗尽）后，记录写入 `extraction_failed` 表。后台每 30 分钟自动重试，也可手动触发。
+
+| 端点 | 说明 |
+|------|------|
+| `GET /api/failed` | 列出失败的提取记录 |
+| `POST /api/failed/{raw_id}/retry` | 手动触发重试 |
+
+`GET /api/stats` 返回的 `failed_count` 字段显示当前失败记录数。
+
 ## 数据模型
 
 ### raw 表（原文快照）
