@@ -4,6 +4,7 @@ import hashlib
 import hmac
 import json
 import logging
+import asyncio
 import traceback
 from typing import Optional
 
@@ -14,7 +15,7 @@ from pydantic import BaseModel
 from config import SERVER_PORT, WEBHOOK_SECRET
 from extractor import extract_and_save
 from models import WebhookMessage
-from storage import close_db, get_db, save_raw
+from storage import close_db, delete_failed, get_db, get_failed_raws, list_failed, save_raw
 
 logging.basicConfig(
     level=logging.INFO,
@@ -230,6 +231,7 @@ async def stats():
     return {
         "raw_count": raw_count[0]["cnt"],
         "narrative_count": nar_count[0]["cnt"],
+        "failed_count": (await db.execute_fetchall("SELECT COUNT(*) as cnt FROM extraction_failed"))[0]["cnt"],
         "avg_sentiment": round(avg_scores[0]["avg_sentiment"] or 0, 4),
         "avg_intensity": round(avg_scores[0]["avg_intensity"] or 0, 4),
         "distribution": {
@@ -238,6 +240,69 @@ async def stats():
             "text_type": {r["text_type"]: r["cnt"] for r in type_dist},
         },
     }
+
+
+# ── Failed extraction management ──
+
+
+@app.get("/api/failed")
+async def api_list_failed(
+    limit: int = Query(50, ge=1, le=200),
+    offset: int = Query(0, ge=0),
+):
+    items = await list_failed(limit, offset)
+    return {"items": items, "count": len(items)}
+
+
+@app.post("/api/failed/{raw_id}/retry")
+async def retry_failed(raw_id: int, background_tasks: BackgroundTasks):
+    from storage import get_raw
+    raw = await get_raw(raw_id)
+    if not raw:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="raw message not found")
+
+    # Check if already has narrative
+    nar = await db.execute_fetchall("SELECT id FROM narrative WHERE raw_id = ?", (raw_id,)) if False else None
+    db = await get_db()
+    existing = await db.execute_fetchall("SELECT id FROM narrative WHERE raw_id = ?", (raw_id,))
+    if existing:
+        await delete_failed(raw_id)
+        return {"status": "skipped", "message": "narrative already exists"}
+
+    background_tasks.add_task(_retry_one, raw_id, raw)
+    return {"status": "retrying", "raw_id": raw_id}
+
+
+async def _retry_one(raw_id: int, raw: dict):
+    try:
+        await extract_and_save(raw)
+        # Success — remove from failed table
+        await delete_failed(raw_id)
+        logger.info("retry succeeded for raw_id=%s", raw_id)
+    except Exception:
+        logger.warning("retry failed for raw_id=%s: %s", raw_id, traceback.format_exc(limit=1))
+
+
+async def _retry_failed_loop():
+    await asyncio.sleep(60)  # wait for startup
+    while True:
+        try:
+            failed = await get_failed_raws()
+            if failed:
+                logger.info("auto-retry: found %d failed extractions", len(failed))
+                for row in failed:
+                    raw = {k: row[k] for k in ("id", "level", "time", "title", "brief", "content", "stocks", "subjects") if k in row}
+                    await _retry_one(row["raw_id"], raw)
+                    await asyncio.sleep(5)  # pace between retries
+        except Exception:
+            logger.error("auto-retry loop error: %s", traceback.format_exc(limit=1))
+        await asyncio.sleep(1800)  # every 30 minutes
+
+
+@app.on_event("startup")
+async def startup():
+    asyncio.create_task(_retry_failed_loop())
 
 
 # ── Health ──

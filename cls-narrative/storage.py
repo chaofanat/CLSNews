@@ -23,6 +23,17 @@ CREATE TABLE IF NOT EXISTS raw (
 );
 """
 
+_CREATE_FAILED = """
+CREATE TABLE IF NOT EXISTS extraction_failed (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    raw_id     INTEGER NOT NULL REFERENCES raw(id),
+    error      TEXT    NOT NULL DEFAULT '',
+    attempts   INTEGER NOT NULL DEFAULT 0,
+    created_at REAL    NOT NULL DEFAULT 0,
+    updated_at REAL    NOT NULL DEFAULT 0
+);
+"""
+
 _CREATE_NARRATIVE = """
 CREATE TABLE IF NOT EXISTS narrative (
     id                    INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -63,7 +74,7 @@ async def get_db() -> aiosqlite.Connection:
         _db.row_factory = aiosqlite.Row
         await _db.execute("PRAGMA journal_mode=WAL")
         await _db.execute("PRAGMA foreign_keys=ON")
-        await _db.executescript(_CREATE_RAW + _CREATE_NARRATIVE)
+        await _db.executescript(_CREATE_RAW + _CREATE_NARRATIVE + _CREATE_FAILED)
         await _db.commit()
     return _db
 
@@ -176,3 +187,48 @@ async def get_narrative_by_raw(raw_id: int) -> dict | None:
     cursor = await db.execute("SELECT * FROM narrative WHERE raw_id = ?", (raw_id,))
     row = await cursor.fetchone()
     return dict(row) if row else None
+
+
+async def save_failed(raw_id: int, error: str) -> None:
+    db = await get_db()
+    now = time.time()
+    existing = await db.execute(
+        "SELECT id, attempts FROM extraction_failed WHERE raw_id = ?", (raw_id,)
+    )
+    row = await existing.fetchone()
+    if row:
+        await db.execute(
+            "UPDATE extraction_failed SET error=?, attempts=attempts+1, updated_at=? WHERE raw_id=?",
+            (error, now, raw_id),
+        )
+    else:
+        await db.execute(
+            "INSERT INTO extraction_failed (raw_id, error, attempts, created_at, updated_at) VALUES (?, ?, 1, ?, ?)",
+            (raw_id, error, now, now),
+        )
+    await db.commit()
+
+
+async def list_failed(limit: int = 50, offset: int = 0) -> list[dict]:
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        "SELECT * FROM extraction_failed ORDER BY updated_at DESC LIMIT ? OFFSET ?",
+        (limit, offset),
+    )
+    return [dict(r) for r in rows]
+
+
+async def delete_failed(raw_id: int) -> None:
+    db = await get_db()
+    await db.execute("DELETE FROM extraction_failed WHERE raw_id = ?", (raw_id,))
+    await db.commit()
+
+
+async def get_failed_raws() -> list[dict]:
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        "SELECT f.raw_id, f.attempts, r.id, r.level, r.time, r.title, r.brief, r.content, r.stocks, r.subjects "
+        "FROM extraction_failed f JOIN raw r ON f.raw_id = r.id "
+        "ORDER BY f.updated_at ASC"
+    )
+    return [dict(r) for r in rows]

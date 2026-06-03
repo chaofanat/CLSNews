@@ -10,7 +10,7 @@ import litellm
 from config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, MAX_RETRIES
 from models import NarrativeExtract
 from prompt import build_messages
-from storage import save_narrative
+from storage import save_failed, save_narrative
 
 logger = logging.getLogger(__name__)
 
@@ -60,3 +60,4 @@ async def extract_and_save(raw: dict) -> None:
                 await asyncio.sleep(delay)
 
     logger.error("extraction permanently failed for raw_id=%s after %d retries", raw_id, MAX_RETRIES)
+    await save_failed(raw_id, traceback.format_exc(limit=1))
