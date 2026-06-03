@@ -8,6 +8,7 @@ import traceback
 from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI, Query, Request
+from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from config import SERVER_PORT, WEBHOOK_SECRET
@@ -22,6 +23,13 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="cls-narrative")
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_methods=["GET", "POST"],
+    allow_headers=["*"],
+)
 
 
 def _verify_secret(request: Request, body: bytes) -> bool:
