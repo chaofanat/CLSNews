@@ -15,21 +15,18 @@ cls-monitor ──Webhook──→ cls-narrative ──→ SQLite
 ## 快速开始
 
 ```bash
-# 安装依赖
 pip install -r requirements.txt
-
-# 启动服务（默认端口 8900）
-python server.py
+python server.py        # 默认端口 8900
 ```
 
 ## 配置
 
-通过环境变量或直接修改 `config.py`：
+所有配置通过环境变量设置（也可修改 `config.py` 中的默认值）：
 
 | 变量 | 默认值 | 说明 |
 |------|--------|------|
 | `SERVER_PORT` | `8900` | 服务端口 |
-| `WEBHOOK_SECRET` | 空 | Webhook 签名密钥（与 cls-monitor 对应） |
+| `WEBHOOK_SECRET` | 空 | Webhook HMAC-SHA256 签名密钥（与 cls-monitor 对应） |
 | `LLM_MODEL` | `zai/glm-4.7-flashx` | litellm 模型标识 |
 | `LLM_API_KEY` | 空 | LLM API Key |
 | `LLM_BASE_URL` | 空 | 自定义 API 地址（本地模型代理等） |
@@ -42,33 +39,66 @@ python server.py
 # 智谱 GLM-4.7-FlashX
 LLM_MODEL=zai/glm-4.7-flashx LLM_API_KEY=your-key python server.py
 
+# OpenAI
+LLM_MODEL=openai/gpt-4o-mini LLM_API_KEY=sk-xxx python server.py
+
 # 本地 Ollama
 LLM_MODEL=ollama/qwen3:14b-q8_0 LLM_API_KEY=ollama LLM_BASE_URL=http://localhost:11434 python server.py
 ```
 
 ## 与 cls-monitor 对接
 
-在 cls-monitor 的 `config.py` 中配置：
+在 cls-monitor 的 `.env` 或 `config.py` 中配置：
 
-```python
-WEBHOOK_URL = "http://localhost:8900/webhook"
-WEBHOOK_SECRET = ""  # 与本服务保持一致
-PUSH_HANDLERS = ["sqlite", "webhook"]
+```env
+WEBHOOK_URL=http://localhost:8900/webhook
+WEBHOOK_SECRET=           # 与本服务保持一致
+PUSH_HANDLERS=sqlite,webhook
 ```
 
-## 项目结构
+## API
 
+### Webhook（写入）
+
+#### POST /webhook
+
+接收 cls-monitor 推送的消息（OpenAPI 文档中有完整 Schema，访问 `/docs` 查看）。
+
+```json
+{
+  "id": 12345,
+  "level": "B",
+  "time": "2026-06-03 14:30:00",
+  "title": "...",
+  "brief": "...",
+  "content": "...",
+  "stocks": [{"code": "sh600519", "name": "贵州茅台", "change": "+1.2%"}],
+  "subjects": ["白酒"]
+}
 ```
-cls-narrative/
-├── server.py        # FastAPI Webhook 端点
-├── config.py        # 配置项
-├── models.py        # Pydantic 数据模型
-├── extractor.py     # LLM 调用与重试逻辑
-├── prompt.py        # 叙事提取提示词模板
-├── storage.py       # SQLite 存储层
-├── requirements.txt
-└── db/              # 数据库目录（自动创建）
-```
+
+响应：`{"status": "ok", "count": 1}`
+
+### 查询 API（只读）
+
+| 端点 | 说明 |
+|------|------|
+| `GET /health` | 健康检查 |
+| `GET /api/stats` | 统计概览（总数、平均分、分类分布） |
+| `GET /api/raw?limit=20&offset=0&level=B` | 原文列表（分页、按等级筛选） |
+| `GET /api/raw/{id}` | 单条原文详情 |
+| `GET /api/raw/{id}/narrative` | 原文对应的叙事提取结果 |
+| `GET /api/narrative?text_type=事实报道&narrative_trend=利空&sentiment_min=-1` | 叙事列表（多维筛选） |
+| `GET /api/narrative/{narrative_id}` | 单条叙事详情（按 NAR-YYYYMMDD-NNN） |
+
+查询参数：
+
+- **raw 列表**：`limit`（1-200）、`offset`、`level`（A/B/C）
+- **narrative 列表**：`limit`、`offset`、`text_type`、`narrative_mode`、`narrative_trend`、`narrative_firmness`、`sentiment_min/max`、`intensity_min/max`
+
+### OpenAPI 文档
+
+启动后访问 `http://localhost:8900/docs` 查看完整交互式 API 文档。
 
 ## 数据模型
 
@@ -97,7 +127,7 @@ cls-narrative/
 | 分类属性 | narrative_mode, narrative_trend, narrative_firmness, keyword_core | 枚举约束分类 |
 | 量化映射 | direct_causal_chain, potential_risk_benefit, sentiment_score, narrative_intensity, affected_targets, narrative_link | 因果链、情感、强度、标的 |
 
-额外字段：`raw_id`（关联原文）、`narrative_id`（自增唯一标识 NAR-YYYYMMDD-NNN）、`extracted_at`、`model_version`、`retry_count`。
+额外字段：`raw_id`（关联原文）、`narrative_id`（NAR-YYYYMMDD-NNN）、`extracted_at`、`model_version`、`retry_count`。
 
 ### 枚举值
 
@@ -106,54 +136,19 @@ cls-narrative/
 - **narrative_trend**：利好 / 利空 / 中性 / 待观察
 - **narrative_firmness**：已确认 / 高概率 / 推测性 / 传闻
 
-## API
+## 项目结构
 
-### POST /webhook
-
-接收 cls-monitor 推送的消息。
-
-```json
-{
-  "id": 12345,
-  "level": "B",
-  "time": "2026-06-03 14:30:00",
-  "title": "...",
-  "brief": "...",
-  "content": "...",
-  "stocks": [{"code": "sh600519", "name": "贵州茅台", "change": "+1.2%"}],
-  "subjects": ["白酒"]
-}
 ```
-
-响应：`{"status": "ok", "count": 1}`
-
-### GET /health
-
-健康检查，返回 `{"status": "ok"}`。
-
-## 验证
-
-```bash
-# 启动服务
-python server.py
-
-# 模拟推送（Python，避免 Windows curl 编码问题）
-python -c "
-import json, urllib.request
-msg = {'id':1,'level':'B','time':'2026-06-03 12:00:00','title':'测试','brief':'摘要','content':'正文内容','stocks':[],'subjects':[]}
-data = json.dumps(msg, ensure_ascii=False).encode('utf-8')
-req = urllib.request.Request('http://localhost:8900/webhook', data=data, headers={'Content-Type': 'application/json; charset=utf-8'})
-print(urllib.request.urlopen(req).read().decode())
-"
-
-# 查看 raw 表
-sqlite3 db/narrative.db "SELECT id, title, level FROM raw ORDER BY id DESC LIMIT 5"
-
-# 查看 narrative 表
-sqlite3 db/narrative.db "SELECT narrative_id, text_type, narrative_mode, sentiment_score FROM narrative ORDER BY id DESC LIMIT 5"
-
-# 分类分布统计
-sqlite3 db/narrative.db "SELECT narrative_mode, COUNT(*) FROM narrative GROUP BY narrative_mode"
+cls-narrative/
+├── server.py        # FastAPI Webhook + 查询 API
+├── config.py        # 配置项（环境变量驱动）
+├── models.py        # Pydantic 数据模型 + 枚举
+├── extractor.py     # LLM 调用与重试逻辑
+├── prompt.py        # 叙事提取提示词模板
+├── storage.py       # SQLite 存储层
+├── Dockerfile
+├── requirements.txt
+└── db/              # 数据库目录（自动创建）
 ```
 
 ## 技术栈

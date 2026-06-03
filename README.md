@@ -10,7 +10,7 @@ cls-monitor ──Webhook──→ cls-narrative ──→ SQLite
   SQLite              LLM API (GLM/GPT/Ollama)
 ```
 
-- **cls-monitor** — 财联社电报采集器（[独立仓库](https://github.com/chaofanat/cls-monitor)，通过 git submodule 引入）
+- **cls-monitor** — 财联社电报采集器（[GitHub](https://github.com/chaofanat/cls-monitor) / [Gitee](https://gitee.com/chaofanat/cls-monitor)，通过 git submodule 引入）
 - **cls-narrative** — LLM 叙事提取引擎，提供 Webhook 接收 + 只读查询 API
 
 ## 快速部署
@@ -19,6 +19,7 @@ cls-monitor ──Webhook──→ cls-narrative ──→ SQLite
 
 ```bash
 git clone --recursive https://github.com/chaofanat/CLSNews.git
+# 或 Gitee 镜像：https://gitee.com/chaofanat/CLSNews.git
 cd CLSNews
 ```
 
