@@ -1,0 +1,12 @@
+.env
+__pycache__/
+*.pyc
+.claude/
+.codegraph/
+*.db
+*.db-shm
+*.db-wal
+state.json
+venv/
+.venv/
+PLAN.md

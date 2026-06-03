@@ -1,0 +1,3 @@
+[submodule "cls-monitor"]
+	path = cls-monitor
+	url = https://github.com/chaofanat/cls-monitor.git

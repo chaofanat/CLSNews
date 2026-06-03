@@ -1,0 +1,34 @@
+services:
+  monitor:
+    build: ./cls-monitor
+    env_file: .env
+    environment:
+      - WEBHOOK_URL=http://narrative:8900/webhook
+    volumes:
+      - monitor-db:/app/db
+      - monitor-state:/app/state.json
+    restart: unless-stopped
+    depends_on:
+      narrative:
+        condition: service_healthy
+
+  narrative:
+    build: ./cls-narrative
+    env_file: .env
+    ports:
+      - "${SERVER_PORT:-8900}:8900"
+    environment:
+      - SERVER_PORT=8900
+    volumes:
+      - narrative-db:/app/db
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8900/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+volumes:
+  monitor-db:
+  monitor-state:
+  narrative-db:
