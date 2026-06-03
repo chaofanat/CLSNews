@@ -6,7 +6,6 @@ services:
       - WEBHOOK_URL=http://narrative:8900/webhook
     volumes:
       - monitor-db:/app/db
-      - monitor-state:/app/state.json
     restart: unless-stopped
     depends_on:
       narrative:
@@ -30,5 +29,4 @@ services:
 
 volumes:
   monitor-db:
-  monitor-state:
   narrative-db:

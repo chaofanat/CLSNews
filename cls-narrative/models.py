@@ -43,6 +43,23 @@ class NarrativeFirmness(str, Enum):
 
 # ── Raw message (cls-monitor payload) ──
 
+class WebhookStock(BaseModel):
+    code: str = ""
+    name: str = ""
+    change: str = ""
+
+
+class WebhookMessage(BaseModel):
+    id: int
+    level: str = ""
+    time: str = ""
+    title: str = ""
+    brief: str = ""
+    content: str = ""
+    stocks: list[WebhookStock] = Field(default_factory=list)
+    subjects: list[str] = Field(default_factory=list)
+
+
 class RawMessage(BaseModel):
     id: int
     level: str = ""
@@ -50,8 +67,8 @@ class RawMessage(BaseModel):
     title: str = ""
     brief: str = ""
     content: str = ""
-    stocks: list[str] = Field(default_factory=list)
-    subjects: list[str] = Field(default_factory=list)
+    stocks: list = Field(default_factory=list)
+    subjects: list = Field(default_factory=list)
 
 
 # ── Narrative extraction sub-models ──
