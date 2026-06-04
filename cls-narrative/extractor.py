@@ -102,6 +102,8 @@ async def extract_narrative(raw: dict) -> NarrativeExtract:
     system = messages[0]["content"]
     user_msgs = messages[1:]
 
+    t0 = time.time()
+    logger.info("LLM request raw_id=%s model=%s", raw.get("id"), model)
     response = await _anthropic_client.messages.create(
         model=model,
         max_tokens=4096,
@@ -113,6 +115,7 @@ async def extract_narrative(raw: dict) -> NarrativeExtract:
         extra_body={"enable_thinking": False},
         timeout=300.0,
     )
+    elapsed = time.time() - t0
 
     tool_use = None
     text_blocks: list[str] = []
@@ -123,12 +126,17 @@ async def extract_narrative(raw: dict) -> NarrativeExtract:
             text_blocks.append(block.text)
 
     if tool_use:
-        return NarrativeExtract.model_validate(tool_use.input)
+        result = NarrativeExtract.model_validate(tool_use.input)
+    else:
+        data = _extract_json("".join(text_blocks))
+        if data is None:
+            raise ValueError("no tool_use or valid JSON in response")
+        result = NarrativeExtract.model_validate(data)
 
-    data = _extract_json("".join(text_blocks))
-    if data is None:
-        raise ValueError("no tool_use or valid JSON in response")
-    return NarrativeExtract.model_validate(data)
+    logger.info("LLM response raw_id=%s elapsed=%.1fs tokens(in=%d out=%d)",
+                 raw.get("id"), elapsed,
+                 response.usage.input_tokens, response.usage.output_tokens)
+    return result
 
 
 async def extract_and_save(raw: dict) -> None:
