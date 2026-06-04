@@ -46,6 +46,7 @@ def _create_clients():
         api_key=LLM_API_KEY,
         base_url=base_url,
         timeout=httpx.Timeout(300.0, connect=30.0),
+        max_retries=0,
     )
 
 
@@ -182,6 +183,8 @@ async def _worker(worker_id: int):
             logger.exception("worker %d crashed on raw_id=%s", worker_id, raw.get("id"))
         finally:
             _task_queue.task_done()
+        # Guard against back-to-back requests hitting rate limits
+        await asyncio.sleep(3)
 
 
 async def enqueue_extraction(raw: dict) -> None:
