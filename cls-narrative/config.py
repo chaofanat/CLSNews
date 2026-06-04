@@ -10,4 +10,4 @@ LLM_BASE_URL = os.environ.get("LLM_BASE_URL", "")
 
 DB_PATH = os.environ.get("DB_PATH", "db/narrative.db")
 MAX_RETRIES = int(os.environ.get("MAX_RETRIES", "3"))
-LLM_CONCURRENCY = int(os.environ.get("LLM_CONCURRENCY", "3"))
+LLM_CONCURRENCY = int(os.environ.get("LLM_CONCURRENCY", "1"))

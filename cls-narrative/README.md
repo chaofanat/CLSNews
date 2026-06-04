@@ -32,6 +32,7 @@ python server.py        # 默认端口 8900
 | `LLM_API_KEY` | 空 | LLM API Key |
 | `LLM_BASE_URL` | 空 | 自定义 API 地址（默认智谱 Anthropic 兼容接口） |
 | `DB_PATH` | `db/narrative.db` | SQLite 数据库路径 |
+| `LLM_CONCURRENCY` | `1` | LLM 提取并发 worker 数 |
 | `MAX_RETRIES` | `3` | 提取失败最大重试次数 |
 
 切换模型示例：

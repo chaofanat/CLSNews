@@ -52,6 +52,7 @@ LLM_PROVIDER=anthropic          # "anthropic"（默认）| "litellm"（可选）
 LLM_MODEL=glm-4.7-flashx       # 智谱模型，直接使用模型名
 LLM_API_KEY=your-api-key-here   # 必填
 LLM_BASE_URL=                   # 自定义 API 地址（可选，默认智谱 Anthropic 兼容接口）
+LLM_CONCURRENCY=1               # LLM 提取并发数（默认 1）
 MAX_RETRIES=3
 ```
 

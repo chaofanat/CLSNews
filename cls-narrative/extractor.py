@@ -10,6 +10,11 @@ from typing import Optional
 
 import instructor
 
+try:
+    from anthropic import RateLimitError
+except ImportError:
+    RateLimitError = Exception
+
 from config import LLM_API_KEY, LLM_BASE_URL, LLM_MODEL, LLM_PROVIDER, MAX_RETRIES
 from models import NarrativeExtract
 from prompt import build_messages
@@ -154,12 +159,14 @@ async def extract_and_save(raw: dict) -> None:
                 await delete_failed(raw_id)
                 logger.info("extracted narrative for raw_id=%s (attempt=%d)", raw_id, attempt)
                 return
-            except Exception:
-                delay = 2 ** attempt
+            except Exception as e:
+                is_rate_limit = isinstance(e, RateLimitError)
+                delay = (30 * (2 ** attempt)) if is_rate_limit else (2 ** attempt)
                 logger.warning(
-                    "extraction failed for raw_id=%s attempt=%d, retry in %ds: %s",
+                    "extraction failed for raw_id=%s attempt=%d%s, retry in %ds: %s",
                     raw_id,
                     attempt,
+                    " (rate limited)" if is_rate_limit else "",
                     delay,
                     traceback.format_exc(),
                 )

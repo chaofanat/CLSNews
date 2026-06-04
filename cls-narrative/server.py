@@ -14,7 +14,7 @@ from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from config import SERVER_PORT, WEBHOOK_SECRET
+from config import LLM_CONCURRENCY, SERVER_PORT, WEBHOOK_SECRET
 from extractor import enqueue_extraction, get_running_tasks, start_workers
 from models import WebhookMessage
 from storage import close_db, delete_failed, get_db, get_failed_raws, get_orphaned_raws, list_failed, save_raw
@@ -323,7 +323,7 @@ async def _retry_failed_loop():
 
 @app.on_event("startup")
 async def startup():
-    start_workers(2)
+    start_workers(LLM_CONCURRENCY)
     asyncio.create_task(_retry_failed_loop())
 
 
