@@ -40,8 +40,13 @@ def _create_clients():
         import litellm
         return instructor.from_litellm(litellm.acompletion), None
     import anthropic
+    import httpx
     base_url = LLM_BASE_URL or ZHIPU_ANTHROPIC_BASE
-    return None, anthropic.AsyncAnthropic(api_key=LLM_API_KEY, base_url=base_url)
+    return None, anthropic.AsyncAnthropic(
+        api_key=LLM_API_KEY,
+        base_url=base_url,
+        timeout=httpx.Timeout(300.0, connect=30.0),
+    )
 
 
 def _extract_json(text: str) -> Optional[dict]:
