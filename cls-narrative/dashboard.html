@@ -1,0 +1,577 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CLS Narrative · 叙事提取监控</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+:root {
+  --bg-deep:    #070a10;
+  --bg-layer:   #0c1019;
+  --bg-card:    #111620;
+  --bg-raised:  #161c28;
+  --border:     #1d2533;
+  --border-hi:  #293548;
+  --text:       #c8d0dc;
+  --text-dim:   #6b7690;
+  --text-bright:#edeff3;
+  --cyan:       #00e5a0;
+  --blue:       #38bdf8;
+  --amber:      #f59e0b;
+  --red:        #f43f5e;
+  --purple:     #a78bfa;
+  --green:      #10b981;
+  --orange:     #f97316;
+}
+
+* { margin:0; padding:0; box-sizing:border-box; }
+
+body {
+  font-family: 'Noto Sans SC', -apple-system, BlinkMacSystemFont, sans-serif;
+  background: var(--bg-deep);
+  color: var(--text);
+  min-height: 100vh;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Subtle grid overlay */
+body::before {
+  content: '';
+  position: fixed; inset: 0; pointer-events: none; z-index: 0;
+  background-image:
+    linear-gradient(rgba(56,189,248,.012) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(56,189,248,.012) 1px, transparent 1px);
+  background-size: 60px 60px;
+  mask-image: radial-gradient(ellipse 80% 60% at 50% 0%, black 30%, transparent 70%);
+}
+
+.container { max-width: 1480px; margin:0 auto; padding: 24px 28px; position:relative; z-index:1; }
+
+/* ── Header ── */
+.header {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 28px; padding-bottom: 20px;
+  border-bottom: 1px solid var(--border);
+}
+.header-left { display:flex; align-items:baseline; gap:16px; }
+.header-left h1 {
+  font-size: 20px; font-weight: 700; letter-spacing: -.3px;
+  background: linear-gradient(135deg, var(--cyan) 0%, var(--blue) 100%);
+  -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+}
+.header-left .subtitle { font-size:12px; color:var(--text-dim); letter-spacing:.8px; text-transform:uppercase; font-family:'JetBrains Mono',monospace; }
+.header-right { display:flex; align-items:center; gap:14px; }
+.header-right .live-dot {
+  width:7px; height:7px; border-radius:50%; background:var(--cyan);
+  box-shadow: 0 0 8px var(--cyan), 0 0 16px rgba(0,229,160,.4);
+  animation: livePulse 2s ease-in-out infinite;
+}
+@keyframes livePulse {
+  0%,100% { opacity:1; box-shadow: 0 0 6px var(--cyan), 0 0 14px rgba(0,229,160,.3); }
+  50%     { opacity:.5; box-shadow: 0 0 3px var(--cyan), 0 0 6px rgba(0,229,160,.1); }
+}
+.header-right .refresh-text { font-size:12px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; min-width:64px; }
+.header-right .btn {
+  font-family: 'Noto Sans SC', sans-serif;
+  padding:6px 16px; border-radius:6px; font-size:12px; font-weight:500;
+  cursor:pointer; transition:all .2s; border:1px solid var(--border-hi);
+  background:var(--bg-raised); color:var(--text);
+}
+.header-right .btn:hover { border-color:var(--blue); color:var(--blue); }
+.header-right .btn.warn { border-color:rgba(245,158,11,.4); color:var(--amber); }
+.header-right .btn.warn:hover { border-color:var(--amber); background:rgba(245,158,11,.08); }
+
+/* ── Stats Cards ── */
+.stats-grid {
+  display:grid; grid-template-columns:repeat(6, 1fr); gap:14px;
+  margin-bottom: 24px;
+}
+@media(max-width:1200px){.stats-grid{grid-template-columns:repeat(3,1fr)}}
+@media(max-width:680px){.stats-grid{grid-template-columns:repeat(2,1fr)}}
+
+.stat-card {
+  background: var(--bg-card); border:1px solid var(--border);
+  border-radius: 10px; padding: 18px 20px; position:relative; overflow:hidden;
+  transition: border-color .25s, transform .2s;
+}
+.stat-card:hover { border-color: var(--border-hi); transform: translateY(-1px); }
+.stat-card::after {
+  content: ''; position:absolute; top:0; left:0; right:0; height:2px;
+  background: linear-gradient(90deg, transparent, var(--accent, var(--blue)), transparent);
+  opacity: 0; transition: opacity .25s;
+}
+.stat-card:hover::after { opacity: 1; }
+.stat-card .label {
+  font-size:11px; color:var(--text-dim); text-transform:uppercase;
+  letter-spacing:.6px; margin-bottom:6px; font-weight:500;
+}
+.stat-card .value {
+  font-family: 'JetBrains Mono', monospace; font-size:30px; font-weight:600;
+  letter-spacing: -1px;
+}
+.stat-card .sub {
+  font-size:11px; color:var(--text-dim); margin-top:4px;
+  font-family:'JetBrains Mono',monospace;
+}
+
+/* ── Mid Section ── */
+.mid-grid {
+  display:grid; grid-template-columns:repeat(4, minmax(0, 1fr)); gap:14px;
+  margin-bottom: 24px;
+}
+@media(max-width:1300px){.mid-grid{grid-template-columns:repeat(2, minmax(0, 1fr))}}
+@media(max-width:700px){.mid-grid{grid-template-columns:minmax(0, 1fr)}}
+
+.panel {
+  background:var(--bg-card); border:1px solid var(--border);
+  border-radius:10px; padding:18px 20px; position:relative;
+  min-width: 0; overflow: hidden;
+}
+.panel h3 {
+  font-size:12px; font-weight:600; color:var(--text-dim); margin-bottom:14px;
+  text-transform:uppercase; letter-spacing:1px;
+}
+.panel canvas { max-height:180px; max-width:100%; }
+
+/* Queue panel */
+.queue-panel { background:var(--bg-card); border:1px solid var(--border); border-radius:10px; padding:18px 20px; min-width:0; overflow:hidden; }
+.queue-panel h3 { font-size:12px; font-weight:600; color:var(--text-dim); margin-bottom:14px; text-transform:uppercase; letter-spacing:1px; }
+.worker-row { display:flex; gap:8px; align-items:center; margin-bottom:12px; }
+.worker-slot {
+  width:32px; height:32px; border-radius:6px; border:1px solid var(--border-hi);
+  background:var(--bg-raised); position:relative; transition:all .3s;
+}
+.worker-slot.active {
+  background:rgba(0,229,160,.12); border-color:var(--cyan);
+  box-shadow: 0 0 10px rgba(0,229,160,.15), inset 0 0 8px rgba(0,229,160,.06);
+}
+.worker-slot.active::after {
+  content:''; position:absolute; inset:3px; border-radius:3px;
+  background:var(--cyan); opacity:.25; animation:slotGlow 2s ease-in-out infinite;
+}
+@keyframes slotGlow {
+  0%,100% { opacity:.15; }
+  50%     { opacity:.4; }
+}
+.worker-label { font-size:11px; color:var(--text-dim); font-family:'JetBrains Mono',monospace; }
+.queue-stat {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:10px 14px; background:var(--bg-raised); border-radius:8px;
+  margin-bottom:14px; border:1px solid transparent;
+}
+.queue-stat.has-queued { border-color:rgba(249,115,22,.25); }
+.queue-stat .qs-label { font-size:11px; color:var(--text-dim); text-transform:uppercase; letter-spacing:.5px; }
+.queue-stat .qs-value {
+  font-family:'JetBrains Mono',monospace; font-size:18px; font-weight:600;
+  color:var(--text-bright);
+}
+.queue-stat.has-queued .qs-value { color:var(--orange); }
+.task-list { max-height:220px; overflow-y:auto; }
+.task-list::-webkit-scrollbar { width:4px; }
+.task-list::-webkit-scrollbar-thumb { background:var(--border-hi); border-radius:2px; }
+.task-item {
+  display:flex; justify-content:space-between; align-items:center;
+  padding:8px 12px; border-radius:6px; margin-bottom:4px;
+  background:var(--bg-raised); font-size:13px; transition:background .15s;
+}
+.task-item:hover { background:rgba(56,189,248,.06); }
+.task-item .tid { font-family:'JetBrains Mono',monospace; color:var(--blue); font-size:12px; }
+.task-item .title { flex:1; margin:0 10px; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+.task-item .elapsed { font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--text-dim); }
+.empty-state { text-align:center; color:var(--text-dim); font-size:13px; padding:20px 0; }
+
+/* ── Tables ── */
+.section {
+  background:var(--bg-card); border:1px solid var(--border);
+  border-radius:10px; padding:18px 20px; margin-bottom:20px;
+}
+.section h2 {
+  font-size:15px; font-weight:600; margin-bottom:14px;
+  display:flex; align-items:center; gap:10px;
+}
+.section h2 .dot {
+  width:6px; height:6px; border-radius:50%; display:inline-block;
+}
+.table-wrap { overflow-x:auto; }
+table { width:100%; border-collapse:collapse; font-size:13px; }
+th {
+  text-align:left; color:var(--text-dim); font-weight:500; font-size:11px;
+  padding:10px 12px; border-bottom:1px solid var(--border);
+  text-transform:uppercase; letter-spacing:.5px; white-space:nowrap;
+}
+td { padding:10px 12px; border-bottom:1px solid var(--border); white-space:nowrap; }
+tr:hover td { background:rgba(56,189,248,.03); }
+tr:last-child td { border-bottom:none; }
+
+/* Badges */
+.badge {
+  display:inline-block; padding:3px 10px; border-radius:5px;
+  font-size:11px; font-weight:600; letter-spacing:.3px;
+}
+.badge.bullish  { background:rgba(16,185,129,.12);  color:var(--green); }
+.badge.bearish  { background:rgba(244,63,94,.12);   color:var(--red); }
+.badge.neutral  { background:rgba(245,158,11,.12);  color:var(--amber); }
+.badge.uncertain{ background:rgba(107,118,144,.12); color:var(--text-dim); }
+.badge.lv-a     { background:rgba(244,63,94,.12);   color:var(--red); }
+.badge.lv-b     { background:rgba(249,115,22,.12);  color:var(--orange); }
+.badge.lv-c     { background:rgba(56,189,248,.12);  color:var(--blue); }
+
+.table-btn {
+  padding:3px 12px; border-radius:5px; font-size:11px; cursor:pointer;
+  border:1px solid var(--border-hi); background:transparent; color:var(--text-dim);
+  font-family:inherit; transition:all .15s;
+}
+.table-btn:hover { border-color:var(--blue); color:var(--blue); }
+.table-btn:disabled { opacity:.3; cursor:default; }
+
+.cell-mono { font-family:'JetBrains Mono',monospace; font-size:12px; }
+.cell-trunc { max-width:220px; overflow:hidden; text-overflow:ellipsis; display:inline-block; }
+
+/* Fade-in animation */
+@keyframes fadeUp {
+  from { opacity:0; transform:translateY(8px); }
+  to   { opacity:1; transform:translateY(0); }
+}
+.stat-card, .panel, .queue-panel, .section { animation: fadeUp .4s ease-out both; }
+.stat-card:nth-child(1) { animation-delay: 0s; }
+.stat-card:nth-child(2) { animation-delay: .04s; }
+.stat-card:nth-child(3) { animation-delay: .08s; }
+.stat-card:nth-child(4) { animation-delay: .12s; }
+.stat-card:nth-child(5) { animation-delay: .16s; }
+.stat-card:nth-child(6) { animation-delay: .20s; }
+
+/* Toast */
+.toast {
+  position:fixed; bottom:32px; right:32px; z-index:100;
+  padding:10px 20px; border-radius:8px; font-size:13px;
+  background:var(--bg-raised); border:1px solid var(--border-hi);
+  color:var(--text); opacity:0; transform:translateY(10px);
+  transition:all .3s;
+}
+.toast.show { opacity:1; transform:translateY(0); }
+.toast.success { border-color:var(--green); }
+.toast.error   { border-color:var(--red); }
+</style>
+</head>
+<body>
+
+<div class="container">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <h1>CLS Narrative</h1>
+      <span class="subtitle">Extraction Monitor</span>
+    </div>
+    <div class="header-right">
+      <button class="btn warn" id="btnBackfill" onclick="triggerBackfill()" style="display:none">补全孤儿数据</button>
+      <div class="live-dot"></div>
+      <span class="refresh-text" id="refreshInfo">--</span>
+    </div>
+  </div>
+
+  <!-- Stats Cards -->
+  <div class="stats-grid" id="statsCards"></div>
+
+  <!-- Mid: Charts + Queue -->
+  <div class="mid-grid">
+    <div class="panel"><h3>叙事趋势</h3><canvas id="chartTrend"></canvas></div>
+    <div class="panel"><h3>文本类型</h3><canvas id="chartType"></canvas></div>
+    <div class="panel"><h3>叙事模式</h3><canvas id="chartMode"></canvas></div>
+    <div class="queue-panel">
+      <h3>提取队列</h3>
+      <div class="worker-row" id="workerSlots"></div>
+      <div class="queue-stat" id="queueStat">
+        <span class="qs-label">等待中</span>
+        <span class="qs-value">0</span>
+      </div>
+      <div class="task-list" id="runningList"></div>
+    </div>
+  </div>
+
+  <!-- Narrative Table -->
+  <div class="section">
+    <h2><span class="dot" style="background:var(--cyan)"></span>最新叙事提取</h2>
+    <div class="table-wrap"><table><thead><tr>
+      <th>ID</th><th>发布时间</th><th>核心主体</th><th>趋势</th><th>模式</th><th>情感</th><th>强度</th><th>关键词</th>
+    </tr></thead><tbody id="narBody"></tbody></table></div>
+  </div>
+
+  <!-- Raw Table -->
+  <div class="section">
+    <h2><span class="dot" style="background:var(--blue)"></span>最新原始消息</h2>
+    <div class="table-wrap"><table><thead><tr>
+      <th>ID</th><th>时间</th><th>级别</th><th>标题</th>
+    </tr></thead><tbody id="rawBody"></tbody></table></div>
+  </div>
+
+  <!-- Failed Table -->
+  <div class="section">
+    <h2><span class="dot" style="background:var(--red)"></span>失败任务</h2>
+    <div class="table-wrap"><table><thead><tr>
+      <th>Raw ID</th><th>错误信息</th><th>重试次数</th><th>记录时间</th><th>操作</th>
+    </tr></thead><tbody id="failedBody"></tbody></table></div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── Constants ──
+const TREND = { '利好':'看多', '利空':'看空', '中性':'中性', '待观察':'不确定' };
+const TYPE  = { '事实报道':'事实报道', '观点研判':'观点研判', '政策发布':'政策发布', '数据发布':'数据发布', '市场传闻':'市场传闻', '公告披露':'公告披露' };
+const MODE  = { '突破型':'突破型', '确认型':'确认型', '否认型':'否认型', '升级型':'升级型', '缓和型':'缓和型', '延续型':'延续型', '反转型':'反转型' };
+const TCOL  = { '利好':'#10b981', '利空':'#f43f5e', '中性':'#f59e0b', '待观察':'#6b7690' };
+const TDATA = ['利好','利空','中性','待观察'];
+const TCOLS = ['#10b981','#f43f5e','#f59e0b','#6b7690'];
+const PCOLS = ['#38bdf8','#10b981','#f97316','#a78bfa','#f43f5e','#6b7690'];
+const MCOLS = ['#f43f5e','#10b981','#f97316','#38bdf8','#a78bfa','#6b7690','#f59e0b','#f43f5e'];
+const REFRESH = 10;
+
+let countdown = REFRESH;
+let charts = {};
+let renderedOnce = false;
+
+// ── Helpers ──
+const $ = id => document.getElementById(id);
+function num(n) { const v=parseFloat(n); return isNaN(v)?0:v; }
+function ts(t) {
+  if(!t) return '-';
+  const d = typeof t==='number' ? new Date(t*1000) : new Date(t);
+  return isNaN(d) ? t : d.toLocaleString('zh-CN',{hour12:false});
+}
+function elapsed(s) { return s<60 ? s+'s' : Math.floor(s/60)+'m'+(s%60)+'s'; }
+function trunc(s,n=80) { const t=String(s||'-'); return t.length>n ? t.slice(0,n)+'…' : t; }
+function badgeTrend(v) {
+  const cls = {'利好':'bullish','利空':'bearish','中性':'neutral','待观察':'uncertain'};
+  return `<span class="badge ${cls[v]||'uncertain'}">${TREND[v]||v}</span>`;
+}
+function badgeLevel(v) {
+  const map = { A:'lv-a', B:'lv-b', flash:'lv-a', important:'lv-b' };
+  return `<span class="badge ${map[v]||'lv-c'}">${v}</span>`;
+}
+
+async function api(path, opts) { const r=await fetch(path,opts); return r.json(); }
+
+// ── Toast ──
+function toast(msg, type='') {
+  const t = $('toast'); t.textContent=msg; t.className='toast '+type+' show';
+  setTimeout(()=>t.classList.remove('show'), 2200);
+}
+
+// ── Render: Stats ──
+function renderStats(s) {
+  const sent = num(s.avg_sentiment);
+  const rate = s.raw_count ? (s.narrative_count/s.raw_count*100).toFixed(1) : '0';
+  const cards = [
+    { label:'原始消息', value:s.raw_count||0, accent:'var(--blue)', sub:null },
+    { label:'叙事提取', value:s.narrative_count||0, accent:'var(--cyan)', sub:null },
+    { label:'失败任务', value:s.failed_count||0, accent:'var(--red)', sub:null, warn:s.failed_count>0 },
+    { label:'提取率', value:rate+'%', accent:'var(--purple)', sub:null },
+    { label:'平均情感分', value:sent.toFixed(3), accent:sent>0.05?'var(--green)':sent<-0.05?'var(--red)':'var(--amber)', sub:'[-1, 1]' },
+    { label:'平均强度', value:num(s.avg_intensity).toFixed(3), accent:'var(--blue)', sub:'[0, 1]' },
+  ];
+  $('statsCards').innerHTML = cards.map((c,i) => `
+    <div class="stat-card" style="--accent:${c.accent}">
+      <div class="label">${c.label}</div>
+      <div class="value" style="color:${c.accent}">${c.value}</div>
+      ${c.sub?`<div class="sub">${c.sub}</div>`:''}
+    </div>
+  `).join('');
+
+  // Toggle backfill button
+  $('btnBackfill').style.display = (s.failed_count>0) ? '' : 'none';
+}
+
+// ── Render: Queue ──
+function renderQueue(r) {
+  const workers = r.workers||0;
+  const running = r.count||0;
+  const queued = r.queued||0;
+
+  // Worker slots
+  let slots = '';
+  for(let i=0;i<workers;i++) {
+    slots += `<div class="worker-slot ${i<running?'active':''}"></div>`;
+  }
+  $('workerSlots').innerHTML = slots + `<span class="worker-label">${running}/${workers} 工作中</span>`;
+
+  // Queue stat
+  const qs = $('queueStat');
+  qs.className = 'queue-stat' + (queued>0?' has-queued':'');
+  qs.querySelector('.qs-value').textContent = queued;
+
+  // Running list
+  const items = r.items||[];
+  if(!items.length && !queued) {
+    $('runningList').innerHTML = '<div class="empty-state">队列空闲</div>';
+  } else if(!items.length) {
+    $('runningList').innerHTML = `<div class="empty-state">${queued} 条等待处理…</div>`;
+  } else {
+    $('runningList').innerHTML = items.map(t => `
+      <div class="task-item">
+        <span class="tid">#${t.raw_id}</span>
+        <span class="title">${t.title||'-'}</span>
+        <span class="elapsed">${elapsed(t.elapsed_s||0)}</span>
+      </div>
+    `).join('');
+  }
+}
+
+// ── Render: Narrative Table ──
+function renderNarratives(items) {
+  const b = $('narBody');
+  if(!items.length) { b.innerHTML='<tr><td colspan="8"><div class="empty-state">暂无数据</div></td></tr>'; return; }
+  b.innerHTML = items.map(n => `
+    <tr>
+      <td class="cell-mono">${n.narrative_id||'-'}</td>
+      <td>${ts(n.publish_time)}</td>
+      <td class="cell-trunc" title="${n.main_subject||''}">${n.main_subject||'-'}</td>
+      <td>${badgeTrend(n.narrative_trend)}</td>
+      <td>${MODE[n.narrative_mode]||n.narrative_mode||'-'}</td>
+      <td class="cell-mono">${num(n.sentiment_score).toFixed(2)}</td>
+      <td class="cell-mono">${num(n.narrative_intensity).toFixed(2)}</td>
+      <td class="cell-trunc" title="${(n.keyword_core||[]).join(', ')}">${(n.keyword_core||[]).slice(0,3).join(' · ')}</td>
+    </tr>
+  `).join('');
+}
+
+// ── Render: Raw Table ──
+function renderRaw(items) {
+  const b = $('rawBody');
+  if(!items.length) { b.innerHTML='<tr><td colspan="4"><div class="empty-state">暂无数据</div></td></tr>'; return; }
+  b.innerHTML = items.map(r => `
+    <tr>
+      <td class="cell-mono">${r.id}</td>
+      <td>${ts(r.time)}</td>
+      <td>${badgeLevel(r.level)}</td>
+      <td class="cell-trunc" title="${r.title||''}">${r.title||'-'}</td>
+    </tr>
+  `).join('');
+}
+
+// ── Render: Failed Table ──
+function renderFailed(items) {
+  const b = $('failedBody');
+  if(!items.length) { b.innerHTML='<tr><td colspan="5"><div class="empty-state">暂无失败任务</div></td></tr>'; return; }
+  b.innerHTML = items.map(f => `
+    <tr>
+      <td class="cell-mono">${f.raw_id}</td>
+      <td class="cell-trunc" title="${f.error||''}">${trunc(f.error,60)}</td>
+      <td>${f.attempts||0}</td>
+      <td>${ts(f.created_at)}</td>
+      <td><button class="table-btn" onclick="retryFailed(${f.raw_id},this)">重试</button></td>
+    </tr>
+  `).join('');
+}
+
+// ── Render: Charts ──
+function renderCharts(dist) {
+  const td = dist.narrative_trend||{};
+  const tt = dist.text_type||{};
+  const tm = dist.narrative_mode||{};
+
+  function makeOrUpdate(key, canvasId, labels, data, colors) {
+    if (charts[key]) {
+      charts[key].data.labels = labels;
+      charts[key].data.datasets[0].data = data;
+      charts[key].data.datasets[0].backgroundColor = colors;
+      charts[key].update();
+    } else {
+      charts[key] = new Chart($(canvasId), {
+        type:'doughnut',
+        data:{ labels, datasets:[{ data, backgroundColor:colors, borderWidth:0 }] },
+        options:{
+          responsive:true, maintainAspectRatio:true,
+          plugins:{
+            legend:{ position:'bottom', labels:{ color:'#6b7690', padding:8, font:{ size:10, family:"'Noto Sans SC'" }, usePointStyle:true, pointStyleWidth:6 } }
+          }
+        }
+      });
+    }
+  }
+
+  const tKeys=Object.keys(td);
+  makeOrUpdate('trend','chartTrend',
+    tKeys.map(k=>TREND[k]||k),
+    tKeys.map(k=>td[k]),
+    tKeys.map(k=>TCOL[k]||'#6b7690'));
+
+  const ttKeys=Object.keys(tt);
+  makeOrUpdate('type','chartType',
+    ttKeys.map(k=>TYPE[k]||k),
+    ttKeys.map(k=>tt[k]),
+    PCOLS.slice(0,ttKeys.length));
+
+  const tmKeys=Object.keys(tm);
+  makeOrUpdate('mode','chartMode',
+    tmKeys.map(k=>MODE[k]||k),
+    tmKeys.map(k=>tm[k]),
+    MCOLS.slice(0,tmKeys.length));
+}
+
+// ── Actions ──
+async function retryFailed(rawId, btn) {
+  btn.disabled=true; btn.textContent='…';
+  try {
+    const d = await api('/api/failed/'+rawId+'/retry', {method:'POST'});
+    toast(d.status==='retrying'?'已加入重试队列 #'+rawId : (d.message||d.status), 'success');
+    btn.textContent = d.status==='retrying'?'已派发':'跳过';
+  } catch(e) {
+    toast('请求失败', 'error');
+    btn.textContent='重试';
+  }
+  setTimeout(()=>{btn.disabled=false;btn.textContent='重试'},3000);
+}
+
+async function triggerBackfill() {
+  const btn = $('btnBackfill');
+  btn.disabled=true; btn.textContent='补全中…';
+  try {
+    const d = await api('/api/failed/backfill', {method:'POST'});
+    toast('补全已启动，孤儿数据已登记到重试队列', 'success');
+  } catch(e) {
+    toast('补全请求失败', 'error');
+  }
+  setTimeout(()=>{btn.disabled=false;btn.textContent='补全孤儿数据'},5000);
+}
+
+// ── Main refresh ──
+async function refresh() {
+  try {
+    const [stats, running, nar, raw, failed] = await Promise.all([
+      api('/api/stats'),
+      api('/api/running'),
+      api('/api/narrative?limit=20'),
+      api('/api/raw?limit=20'),
+      api('/api/failed?limit=20')
+    ]);
+    renderStats(stats);
+    renderQueue(running);
+    renderNarratives(nar.items||[]);
+    renderRaw(raw.items||[]);
+    renderFailed(failed.items||[]);
+    renderCharts(stats.distribution||{});
+    $('refreshInfo').textContent = `下次刷新 ${countdown}s`;
+  } catch(e) {
+    console.error('refresh error', e);
+    if(!renderedOnce) $('refreshInfo').textContent = '连接失败';
+  }
+  renderedOnce = true;
+}
+
+// Timer countdown
+setInterval(() => {
+  countdown--;
+  if(countdown<=0) { refresh(); countdown=REFRESH; }
+  $('refreshInfo').textContent = `下次刷新 ${countdown}s`;
+}, 1000);
+
+refresh();
+</script>
+</body>
+</html>

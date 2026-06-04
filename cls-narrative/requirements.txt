@@ -2,5 +2,5 @@ fastapi>=0.115
 uvicorn>=0.34
 pydantic>=2.0
 instructor>=1.0
-litellm>=1.50
+anthropic>=0.100
 aiosqlite>=0.20

@@ -9,13 +9,15 @@ import traceback
 from typing import Optional
 
 from fastapi import BackgroundTasks, FastAPI, Query, Request
+from fastapi.responses import HTMLResponse as _HTMLResponse
+from pathlib import Path
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from config import SERVER_PORT, WEBHOOK_SECRET
-from extractor import extract_and_save
+from extractor import enqueue_extraction, get_running_tasks, start_workers
 from models import WebhookMessage
-from storage import close_db, delete_failed, get_db, get_failed_raws, list_failed, save_raw
+from storage import close_db, delete_failed, get_db, get_failed_raws, get_orphaned_raws, list_failed, save_raw
 
 logging.basicConfig(
     level=logging.INFO,
@@ -72,7 +74,6 @@ class WebhookResponse(BaseModel):
 async def receive(
     message: WebhookMessage,
     request: Request,
-    background_tasks: BackgroundTasks,
 ):
     if WEBHOOK_SECRET:
         body = await request.body()
@@ -81,7 +82,7 @@ async def receive(
             raise HTTPException(status_code=403, detail="invalid signature")
 
     await save_raw(message.model_dump())
-    background_tasks.add_task(extract_and_save, message.model_dump())
+    await enqueue_extraction(message.model_dump())
 
     logger.info("received message #%d", message.id)
     return {"status": "ok", "count": 1}
@@ -254,6 +255,13 @@ async def api_list_failed(
     return {"items": items, "count": len(items)}
 
 
+@app.post("/api/failed/backfill")
+async def trigger_backfill(background_tasks: BackgroundTasks):
+    """Manually trigger orphaned raw backfill."""
+    background_tasks.add_task(_backfill_orphans)
+    return {"status": "backfill started"}
+
+
 @app.post("/api/failed/{raw_id}/retry")
 async def retry_failed(raw_id: int, background_tasks: BackgroundTasks):
     from storage import get_raw
@@ -275,18 +283,31 @@ async def retry_failed(raw_id: int, background_tasks: BackgroundTasks):
 
 
 async def _retry_one(raw_id: int, raw: dict):
-    try:
-        await extract_and_save(raw)
-        # Success — remove from failed table
-        await delete_failed(raw_id)
-        logger.info("retry succeeded for raw_id=%s", raw_id)
-    except Exception:
-        logger.warning("retry failed for raw_id=%s: %s", raw_id, traceback.format_exc(limit=1))
+    # Success/failure cleanup is handled by extract_and_save internally
+    await enqueue_extraction(raw)
+    logger.info("retry enqueued for raw_id=%s", raw_id)
+
+
+async def _backfill_orphans():
+    """Register orphaned raw records (no narrative + no failed) into extraction_failed.
+    Actual retry is handled by the main loop."""
+    from storage import save_failed
+    orphans = await get_orphaned_raws()
+    if not orphans:
+        return
+    logger.info("backfill: registering %d orphaned raw records", len(orphans))
+    for row in orphans:
+        await save_failed(row["id"], "backfilled: no prior extraction record")
 
 
 async def _retry_failed_loop():
     await asyncio.sleep(60)  # wait for startup
     while True:
+        try:
+            # Also pick up new orphans each cycle
+            await _backfill_orphans()
+        except Exception:
+            logger.error("backfill orphans error: %s", traceback.format_exc(limit=1))
         try:
             failed = await get_failed_raws()
             if failed:
@@ -302,7 +323,31 @@ async def _retry_failed_loop():
 
 @app.on_event("startup")
 async def startup():
+    start_workers(2)
     asyncio.create_task(_retry_failed_loop())
+
+
+# ── Running tasks ──
+
+
+@app.get("/api/running")
+async def running_tasks():
+    tasks = get_running_tasks()
+    return {
+        "count": len(tasks["running"]),
+        "queued": tasks["queued"],
+        "workers": tasks["workers"],
+        "items": tasks["running"],
+    }
+
+
+# ── Dashboard ──
+
+
+@app.get("/dashboard", response_class=_HTMLResponse)
+async def dashboard():
+    html_path = Path(__file__).parent / "dashboard.html"
+    return _HTMLResponse(html_path.read_text("utf-8"))
 
 
 # ── Health ──

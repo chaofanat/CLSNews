@@ -27,23 +27,24 @@ python server.py        # 默认端口 8900
 |------|--------|------|
 | `SERVER_PORT` | `8900` | 服务端口 |
 | `WEBHOOK_SECRET` | 空 | Webhook HMAC-SHA256 签名密钥（与 cls-monitor 对应） |
-| `LLM_MODEL` | `zai/glm-4.7-flashx` | litellm 模型标识 |
+| `LLM_PROVIDER` | `anthropic` | LLM 后端：`"anthropic"`（默认，直连智谱）或 `"litellm"`（多后端） |
+| `LLM_MODEL` | `glm-4.7-flashx` | 模型名称（anthropic 模式直接使用智谱模型名） |
 | `LLM_API_KEY` | 空 | LLM API Key |
-| `LLM_BASE_URL` | 空 | 自定义 API 地址（本地模型代理等） |
+| `LLM_BASE_URL` | 空 | 自定义 API 地址（默认智谱 Anthropic 兼容接口） |
 | `DB_PATH` | `db/narrative.db` | SQLite 数据库路径 |
 | `MAX_RETRIES` | `3` | 提取失败最大重试次数 |
 
 切换模型示例：
 
 ```bash
-# 智谱 GLM-4.7-FlashX
-LLM_MODEL=zai/glm-4.7-flashx LLM_API_KEY=your-key python server.py
+# 智谱 GLM-4.7-FlashX（默认，Anthropic 兼容接口）
+LLM_MODEL=glm-4.7-flashx LLM_API_KEY=your-key python server.py
 
-# OpenAI
-LLM_MODEL=openai/gpt-4o-mini LLM_API_KEY=sk-xxx python server.py
+# 智谱高并发模型
+LLM_MODEL=GLM-4-FlashX-250414 LLM_API_KEY=your-key python server.py
 
-# 本地 Ollama
-LLM_MODEL=ollama/qwen3:14b-q8_0 LLM_API_KEY=ollama LLM_BASE_URL=http://localhost:11434 python server.py
+# litellm 多后端模式（需 pip install litellm）
+LLM_PROVIDER=litellm LLM_MODEL=openai/gpt-4o-mini LLM_API_KEY=sk-xxx python server.py
 ```
 
 ## 与 cls-monitor 对接
@@ -90,6 +91,7 @@ PUSH_HANDLERS=sqlite,webhook
 | `GET /api/raw/{id}/narrative` | 原文对应的叙事提取结果 |
 | `GET /api/narrative?text_type=事实报道&narrative_trend=利空&sentiment_min=-1` | 叙事列表（多维筛选） |
 | `GET /api/narrative/{narrative_id}` | 单条叙事详情（按 NAR-YYYYMMDD-NNN） |
+| `GET /api/running` | 当前执行中的提取任务 + 排队数量 + worker 信息 |
 
 查询参数：
 
@@ -108,8 +110,13 @@ LLM 提取永久失败（3 次重试耗尽）后，记录写入 `extraction_fail
 |------|------|
 | `GET /api/failed` | 列出失败的提取记录 |
 | `POST /api/failed/{raw_id}/retry` | 手动触发重试 |
+| `POST /api/failed/backfill` | 扫描有 raw 但无 narrative 无 failed 的孤儿数据，登记到重试队列 |
 
-`GET /api/stats` 返回的 `failed_count` 字段显示当前失败记录数。
+启动时自动执行一次 backfill，之后每 30 分钟与失败重试一起执行。`GET /api/stats` 返回的 `failed_count` 字段显示当前失败记录数。
+
+### 提取队列
+
+Webhook 和重试共用统一的 `asyncio.Queue`，由 2 个 worker 消费。`GET /api/running` 返回当前正在执行的任务、排队数量、worker 数。仪表盘 `/dashboard` 可查看队列和 worker 状态。
 
 ## 数据模型
 
@@ -165,7 +172,9 @@ cls-narrative/
 ## 技术栈
 
 - **FastAPI** — 异步 Web 框架
-- **instructor + litellm** — LLM 结构化输出（支持 OpenAI / 智谱 / Ollama 等多后端）
+- **Anthropic SDK** — LLM 调用（默认，直连智谱 Anthropic 兼容接口）
+- **instructor + litellm**（可选）— 多后端 LLM 结构化输出
 - **Pydantic** — 数据校验与枚举约束
 - **SQLite WAL** — 单机持久化
 - **uvicorn** — ASGI 服务器
+- **Chart.js** — 仪表盘图表

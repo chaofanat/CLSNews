@@ -232,3 +232,17 @@ async def get_failed_raws() -> list[dict]:
         "ORDER BY f.updated_at ASC"
     )
     return [dict(r) for r in rows]
+
+
+async def get_orphaned_raws() -> list[dict]:
+    """raw records with no narrative and no failed record."""
+    db = await get_db()
+    rows = await db.execute_fetchall(
+        "SELECT r.id, r.level, r.time, r.title, r.brief, r.content, r.stocks, r.subjects "
+        "FROM raw r "
+        "LEFT JOIN narrative n ON r.id = n.raw_id "
+        "LEFT JOIN extraction_failed f ON r.id = f.raw_id "
+        "WHERE n.id IS NULL AND f.id IS NULL "
+        "ORDER BY r.id ASC"
+    )
+    return [dict(r) for r in rows]

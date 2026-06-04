@@ -48,9 +48,10 @@ PUSH_HANDLERS=sqlite,webhook
 
 # --- cls-narrative ---
 SERVER_PORT=8900
-LLM_MODEL=zai/glm-4.7-flashx
+LLM_PROVIDER=anthropic          # "anthropic"（默认）| "litellm"（可选）
+LLM_MODEL=glm-4.7-flashx       # 智谱模型，直接使用模型名
 LLM_API_KEY=your-api-key-here   # 必填
-LLM_BASE_URL=                   # 自定义 API 地址（可选）
+LLM_BASE_URL=                   # 自定义 API 地址（可选，默认智谱 Anthropic 兼容接口）
 MAX_RETRIES=3
 ```
 
@@ -105,24 +106,28 @@ docker compose ps                 # 服务状态
 | `GET /api/narrative?text_type=事实报道&narrative_trend=利空&sentiment_min=-1&sentiment_max=0` | 叙事列表（多维筛选） |
 | `GET /api/narrative/{narrative_id}` | 单条叙事详情（按 NAR-YYYYMMDD-NNN） |
 | `POST /webhook` | 接收 cls-monitor 推送（OpenAPI 文档中有完整 Schema） |
+| `GET /api/running` | 当前执行中 + 排队中的提取任务 |
+| `GET /api/failed` | 列出失败的提取记录 |
+| `POST /api/failed/{raw_id}/retry` | 手动重试单条失败记录 |
+| `POST /api/failed/backfill` | 扫描并补全缺失提取的孤儿数据 |
 
 ## 切换 LLM 模型
 
-通过 `.env` 中的 `LLM_MODEL` 和 `LLM_BASE_URL` 切换：
+默认使用 Anthropic SDK 直连智谱（`https://open.bigmodel.cn/api/anthropic`），需要 litellm 多后端支持时设置 `LLM_PROVIDER=litellm` 并在 Dockerfile 中启用构建参数。
 
 ```env
-# 智谱 GLM（默认）
-LLM_MODEL=zai/glm-4.7-flashx
+# 智谱 GLM（默认，通过 Anthropic 兼容接口）
+LLM_PROVIDER=anthropic
+LLM_MODEL=glm-4.7-flashx
 LLM_API_KEY=your-key
 
-# OpenAI
+# 智谱其他模型（更快、并发更高）
+LLM_MODEL=GLM-4-FlashX-250414
+
+# 通过 litellm 使用其他 provider
+LLM_PROVIDER=litellm
 LLM_MODEL=openai/gpt-4o-mini
 LLM_API_KEY=sk-xxx
-
-# 本地 Ollama
-LLM_MODEL=ollama/qwen3:14b-q8_0
-LLM_API_KEY=ollama
-LLM_BASE_URL=http://host.docker.internal:11434
 ```
 
 修改后重启 narrative 生效：
