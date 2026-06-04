@@ -92,8 +92,8 @@ class RiskBenefit(BaseModel):
 
 class AffectedTarget(BaseModel):
     name: str = Field(description="标的名称")
-    target_type: Literal["个股", "板块", "指数", "宏观", "行业"] = Field(description="标的类型")
-    impact: Literal["直接受益", "间接受益", "直接受损", "间接受损", "影响不确定"] = Field(description="影响方向")
+    target_type: Literal["个股", "板块", "指数", "宏观", "行业"] = Field(description="标的类型。必须是以下之一：个股、板块、指数、宏观、行业")
+    impact: Literal["直接受益", "间接受益", "直接受损", "间接受损", "影响不确定"] = Field(description="影响方向。必须是以下之一：直接受益、间接受益、直接受损、间接受损、影响不确定")
 
 
 class NarrativeLink(BaseModel):
