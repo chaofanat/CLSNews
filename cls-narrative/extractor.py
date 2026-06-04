@@ -90,6 +90,7 @@ async def extract_narrative(raw: dict) -> NarrativeExtract:
         if LLM_BASE_URL:
             kwargs["api_base"] = LLM_BASE_URL
         kwargs["extra_body"] = {"enable_thinking": False}
+        kwargs["timeout"] = 300.0
         return await _litellm_client.create(**kwargs)
 
     # anthropic provider
@@ -105,6 +106,7 @@ async def extract_narrative(raw: dict) -> NarrativeExtract:
         tools=[_NARRATIVE_TOOL_ANTHROPIC],
         tool_choice={"type": "tool", "name": "extract_narrative"},
         extra_body={"enable_thinking": False},
+        timeout=300.0,
     )
 
     tool_use = None
