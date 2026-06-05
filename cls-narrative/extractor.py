@@ -99,12 +99,17 @@ def _fix_enum_confusion(payload: dict) -> None:
                        payload["text_type"], payload["narrative_mode"])
 
 
-async def extract_narrative(raw: dict) -> NarrativeExtract:
+async def extract_narrative(raw: dict, attempt: int = 0, last_error: str = "") -> NarrativeExtract:
     messages = build_messages(raw)
+    if last_error:
+        messages.append({"role": "assistant", "content": [{"type": "text", "text": "（提取结果已生成）"}]})
+        messages.append({"role": "user", "content": f"上一轮提取失败，错误信息：\n{last_error}\n\n请修正错误，严格按枚举约束重新提取。"})
 
     model = LLM_MODEL
     if model.startswith("zai/"):
         model = model[4:]
+
+    temperature = min(0.1 + attempt * 0.2, 0.7)
 
     if LLM_PROVIDER == "litellm":
         kwargs: dict = {
@@ -112,7 +117,7 @@ async def extract_narrative(raw: dict) -> NarrativeExtract:
             "messages": messages,
             "response_model": NarrativeExtract,
             "max_retries": 0,
-            "temperature": 0.1,
+            "temperature": temperature,
         }
         if LLM_API_KEY:
             kwargs["api_key"] = LLM_API_KEY
@@ -126,11 +131,11 @@ async def extract_narrative(raw: dict) -> NarrativeExtract:
     user_msgs = messages[1:]
 
     t0 = time.time()
-    logger.info("LLM request raw_id=%s model=%s", raw.get("id"), model)
+    logger.info("LLM request raw_id=%s model=%s temp=%.2f", raw.get("id"), model, temperature)
     response = await _anthropic_client.messages.create(
         model=model,
         max_tokens=4096,
-        temperature=0.1,
+        temperature=temperature,
         system=system,
         messages=user_msgs,
         tools=[_NARRATIVE_TOOL_ANTHROPIC],
@@ -174,7 +179,7 @@ async def extract_and_save(raw: dict) -> None:
     try:
         for attempt in range(MAX_RETRIES):
             try:
-                result = await extract_narrative(raw)
+                result = await extract_narrative(raw, attempt=attempt, last_error=last_error)
                 await save_narrative(raw_id, result, model_version, retry_count=attempt)
                 await delete_failed(raw_id)
                 logger.info("extracted narrative for raw_id=%s (attempt=%d)", raw_id, attempt)
