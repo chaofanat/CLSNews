@@ -80,6 +80,24 @@ _workers: list[asyncio.Task] = []
 _running_tasks: dict[int, dict] = {}
 _worker_count = 0
 
+_TEXT_TYPE_VALUES = {"事实报道", "观点研判", "政策发布", "数据发布", "市场传闻", "公告披露"}
+_NARRATIVE_MODE_VALUES = {"突破型", "确认型", "否认型", "升级型", "缓和型", "延续型", "反转型"}
+
+
+def _fix_enum_confusion(payload: dict) -> None:
+    """Fix LLM mixing up text_type and narrative_mode enum values."""
+    mode = payload.get("narrative_mode")
+    ttype = payload.get("text_type")
+    if mode in _TEXT_TYPE_VALUES and mode not in _NARRATIVE_MODE_VALUES:
+        if ttype in _NARRATIVE_MODE_VALUES and ttype not in _TEXT_TYPE_VALUES:
+            payload["narrative_mode"] = ttype
+            payload["text_type"] = mode
+        else:
+            payload["text_type"] = mode
+            payload["narrative_mode"] = "延续型"
+        logger.warning("fixed enum confusion: swapped text_type=%s narrative_mode=%s",
+                       payload["text_type"], payload["narrative_mode"])
+
 
 async def extract_narrative(raw: dict) -> NarrativeExtract:
     messages = build_messages(raw)
@@ -131,12 +149,14 @@ async def extract_narrative(raw: dict) -> NarrativeExtract:
             text_blocks.append(block.text)
 
     if tool_use:
-        result = NarrativeExtract.model_validate(tool_use.input)
+        payload = tool_use.input
     else:
-        data = _extract_json("".join(text_blocks))
-        if data is None:
+        payload = _extract_json("".join(text_blocks))
+        if payload is None:
             raise ValueError("no tool_use or valid JSON in response")
-        result = NarrativeExtract.model_validate(data)
+
+    _fix_enum_confusion(payload)
+    result = NarrativeExtract.model_validate(payload)
 
     logger.info("LLM response raw_id=%s elapsed=%.1fs tokens(in=%d out=%d)",
                  raw.get("id"), elapsed,
