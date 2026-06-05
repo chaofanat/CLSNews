@@ -150,6 +150,7 @@ async def extract_and_save(raw: dict) -> None:
     model_version = LLM_MODEL
 
     _running_tasks[raw_id] = {"raw_id": raw_id, "title": raw.get("title", ""), "started_at": time.time()}
+    last_error = ""
     try:
         for attempt in range(MAX_RETRIES):
             try:
@@ -159,6 +160,7 @@ async def extract_and_save(raw: dict) -> None:
                 logger.info("extracted narrative for raw_id=%s (attempt=%d)", raw_id, attempt)
                 return
             except Exception as e:
+                last_error = traceback.format_exc(limit=1)
                 is_rate_limit = isinstance(e, RateLimitError)
                 delay = (30 * (2 ** attempt)) if is_rate_limit else (2 ** attempt)
                 logger.warning(
@@ -167,13 +169,13 @@ async def extract_and_save(raw: dict) -> None:
                     attempt,
                     " (rate limited)" if is_rate_limit else "",
                     delay,
-                    traceback.format_exc(),
+                    last_error,
                 )
                 if attempt < MAX_RETRIES - 1:
                     await asyncio.sleep(delay)
 
         logger.error("extraction permanently failed for raw_id=%s after %d retries", raw_id, MAX_RETRIES)
-        await save_failed(raw_id, traceback.format_exc(limit=1))
+        await save_failed(raw_id, last_error)
     finally:
         _running_tasks.pop(raw_id, None)
 

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import time
 from pathlib import Path
@@ -8,6 +9,8 @@ from pathlib import Path
 import aiosqlite
 
 from config import DB_PATH
+
+logger = logging.getLogger("cls-narrative")
 
 _CREATE_RAW = """
 CREATE TABLE IF NOT EXISTS raw (
@@ -133,6 +136,10 @@ async def save_narrative(raw_id: int, ne: "NarrativeExtract", model_version: str
     from models import NarrativeExtract  # deferred to avoid circular
 
     db = await get_db()
+    existing = await db.execute_fetchall("SELECT id FROM narrative WHERE raw_id = ?", (raw_id,))
+    if existing:
+        logger.info("narrative already exists for raw_id=%s, skipping duplicate", raw_id)
+        return
     now = time.time()
     narrative_id = await _next_narrative_id()
     data = ne.model_dump()
@@ -246,3 +253,45 @@ async def get_orphaned_raws() -> list[dict]:
         "ORDER BY r.id ASC"
     )
     return [dict(r) for r in rows]
+
+
+_NARRATIVE_UPDATEABLE = [
+    "publish_time", "source", "text_type", "main_subject",
+    "core_story", "actor_list", "action_behavior", "scene_context",
+    "narrative_mode", "narrative_trend", "narrative_firmness", "keyword_core",
+    "direct_causal_chain", "potential_risk_benefit",
+    "sentiment_score", "narrative_intensity",
+    "affected_targets", "narrative_link",
+]
+
+
+async def get_narrative_by_id(id: int) -> dict | None:
+    db = await get_db()
+    cursor = await db.execute("SELECT * FROM narrative WHERE id = ?", (id,))
+    row = await cursor.fetchone()
+    return dict(row) if row else None
+
+
+async def delete_narrative_by_id(id: int) -> bool:
+    db = await get_db()
+    cursor = await db.execute("DELETE FROM narrative WHERE id = ?", (id,))
+    await db.commit()
+    return cursor.rowcount > 0
+
+
+async def update_narrative_by_id(id: int, fields: dict) -> dict | None:
+    db = await get_db()
+    sets, params = [], []
+    for k in _NARRATIVE_UPDATEABLE:
+        if k in fields:
+            sets.append(f"{k} = ?")
+            v = fields[k]
+            if isinstance(v, (list, dict)):
+                v = json.dumps(v, ensure_ascii=False)
+            params.append(v)
+    if not sets:
+        return await get_narrative_by_id(id)
+    params.append(id)
+    await db.execute(f"UPDATE narrative SET {', '.join(sets)} WHERE id = ?", params)
+    await db.commit()
+    return await get_narrative_by_id(id)

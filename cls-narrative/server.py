@@ -17,7 +17,10 @@ from pydantic import BaseModel
 from config import LLM_CONCURRENCY, SERVER_PORT, WEBHOOK_SECRET
 from extractor import enqueue_extraction, get_running_tasks, start_workers
 from models import WebhookMessage
-from storage import close_db, delete_failed, get_db, get_failed_raws, get_orphaned_raws, list_failed, save_raw
+from storage import (
+    close_db, delete_failed, delete_narrative_by_id, get_db, get_failed_raws,
+    get_narrative_by_id, get_orphaned_raws, list_failed, save_raw, update_narrative_by_id,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -207,6 +210,26 @@ async def get_raw_narrative(raw_id: int):
     if not row:
         return {"error": "not found"}, 404
     return _parse_json_fields(dict(row), *_JSON_FIELDS_NARRATIVE)
+
+
+@app.delete("/api/narrative/{id}")
+async def api_delete_narrative(id: int):
+    from fastapi import HTTPException
+    existing = await get_narrative_by_id(id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="narrative not found")
+    await delete_narrative_by_id(id)
+    return {"status": "deleted", "id": id}
+
+
+@app.put("/api/narrative/{id}")
+async def api_update_narrative(id: int, fields: dict):
+    from fastapi import HTTPException
+    existing = await get_narrative_by_id(id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="narrative not found")
+    updated = await update_narrative_by_id(id, fields)
+    return _parse_json_fields(updated, *_JSON_FIELDS_NARRATIVE)
 
 
 @app.get("/api/stats")
