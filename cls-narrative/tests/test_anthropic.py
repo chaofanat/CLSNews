@@ -72,10 +72,10 @@ def show_result(ne: NarrativeExtract):
             print(f"  {key}: {val}")
 
 
-def test_model(model: str, extra_body: dict | None = None):
+def test_model(model: str, base_url: str | None = None, extra_body: dict | None = None):
     client = anthropic.Anthropic(
         api_key=LLM_API_KEY,
-        base_url=ZHIPU_ANTHROPIC_BASE,
+        base_url=base_url or ZHIPU_ANTHROPIC_BASE,
     )
 
     messages = build_messages(SAMPLE_RAW)
@@ -154,5 +154,7 @@ def test_model(model: str, extra_body: dict | None = None):
 
 
 if __name__ == "__main__":
-    # Test glm-4.7-flashx with and without thinking
-    test_model("glm-4.7-flashx", extra_body={"enable_thinking": False})
+    # Test the actual production config: DeepSeek via Anthropic-compatible API
+    from config import LLM_BASE_URL, LLM_MODEL, LLM_PROVIDER
+    print(f"Config: provider={LLM_PROVIDER} model={LLM_MODEL} base_url={LLM_BASE_URL}")
+    test_model(LLM_MODEL, base_url=LLM_BASE_URL or None)

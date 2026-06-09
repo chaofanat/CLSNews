@@ -153,12 +153,13 @@ async def extract_narrative(raw: dict, attempt: int = 0, last_error: str = "") -
         elif block.type == "text":
             text_blocks.append(block.text)
 
-    if tool_use:
+    payload = None
+    if tool_use and tool_use.input:
         payload = tool_use.input
-    else:
+    if not payload and text_blocks:
         payload = _extract_json("".join(text_blocks))
-        if payload is None:
-            raise ValueError("no tool_use or valid JSON in response")
+    if not payload:
+        raise ValueError(f"LLM returned empty payload for raw_id={raw.get('id')}")
 
     _fix_enum_confusion(payload)
     result = NarrativeExtract.model_validate(payload)
