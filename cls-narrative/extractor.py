@@ -99,8 +99,10 @@ def _fix_enum_confusion(payload: dict) -> None:
                        payload["text_type"], payload["narrative_mode"])
 
 
-async def extract_narrative(raw: dict, attempt: int = 0, last_error: str = "") -> NarrativeExtract:
+async def extract_narrative(raw: dict, attempt: int = 0, last_error: str = "", bust_cache: bool = False) -> NarrativeExtract:
     messages = build_messages(raw)
+    if bust_cache:
+        messages[0]["content"] = f"[retry-id:{time.time_ns()}] " + messages[0]["content"]
     if last_error:
         messages.append({"role": "assistant", "content": [{"type": "text", "text": "（提取结果已生成）"}]})
         messages.append({"role": "user", "content": f"上一轮提取失败，错误信息：\n{last_error}\n\n请修正错误，严格按枚举约束重新提取。"})
@@ -200,7 +202,18 @@ async def extract_and_save(raw: dict) -> None:
                 if attempt < MAX_RETRIES - 1:
                     await asyncio.sleep(delay)
 
-        logger.error("extraction permanently failed for raw_id=%s after %d retries", raw_id, MAX_RETRIES)
+        # All retries exhausted — one last attempt with cache-busting
+        try:
+            logger.info("cache-busting retry for raw_id=%s", raw_id)
+            result = await extract_narrative(raw, attempt=MAX_RETRIES, last_error=last_error, bust_cache=True)
+            await save_narrative(raw_id, result, model_version, retry_count=MAX_RETRIES)
+            await delete_failed(raw_id)
+            logger.info("extracted narrative for raw_id=%s (cache-busting retry)", raw_id)
+            return
+        except Exception:
+            logger.warning("cache-busting retry failed for raw_id=%s: %s", raw_id, traceback.format_exc(limit=1))
+
+        logger.error("extraction permanently failed for raw_id=%s after %d retries + cache-busting", raw_id, MAX_RETRIES)
         await save_failed(raw_id, last_error)
     finally:
         _running_tasks.pop(raw_id, None)
