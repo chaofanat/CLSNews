@@ -10,3 +10,4 @@ state.json
 venv/
 .venv/
 PLAN.md
+tests/
